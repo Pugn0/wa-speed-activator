@@ -1,20 +1,50 @@
-# ZapVoice System Redirect - Updated for WaSpeed PHP Server
+# WaSpeed System Redirect
 # Dev: @pugno_fc
 # Elevacao de admin feita pelo .bat - nao repetir aqui
 
 $DEV      = "@pugno_fc"
 $WHATSAPP = "+55 (61) 99603-7036"
 
-# Hosts antigos que precisam ser interceptados
 $OldHosts = @(
     "backend-plugin.wascript.com.br",
     "app-backend.wascript.com.br",
     "audio-transcriber.wascript.com.br"
 )
 
-# Novo host de destino (seu servidor PHP)
-$NewHost     = "zapmod.shop"
-$BasePath    = "/extension/waspeed"
+$NewHost  = "zapmod.shop"
+$BasePath = "/extension/waspeed"
+
+# ── Tabela de rotas (igual ao XML do Charles) ──────────────────────
+# Cada entrada: @{ Match = "regex do RawUrl"; Dest = "path destino" }
+$RouteTable = @(
+    # backend-plugin.wascript.com.br
+    @{ Host = "backend-plugin.wascript.com.br";  Match = "^/api/auth/login-bearer";  Dest = "$BasePath/api/auth/login-bearer.php" },
+    @{ Host = "backend-plugin.wascript.com.br";  Match = "^/api/auth/login";         Dest = "$BasePath/api/auth/login.php"         },
+    @{ Host = "backend-plugin.wascript.com.br";  Match = "^/api/auth/validation";    Dest = "$BasePath/api/auth/validation.php"    },
+    @{ Host = "backend-plugin.wascript.com.br";  Match = "^/api/services/initial";   Dest = "$BasePath/api/services/initial-data.php" },
+    @{ Host = "backend-plugin.wascript.com.br";  Match = "^/api/notify/get";         Dest = "$BasePath/api/notify/get.php"         },
+
+    # app-backend.wascript.com.br
+    @{ Host = "app-backend.wascript.com.br";     Match = "^/api/auth/login-bearer";  Dest = "$BasePath/api/auth/login-bearer.php" },
+    @{ Host = "app-backend.wascript.com.br";     Match = "^/api/auth/login";         Dest = "$BasePath/api/auth/login.php"         },
+    @{ Host = "app-backend.wascript.com.br";     Match = "^/api/auth/validation";    Dest = "$BasePath/api/auth/validation.php"    },
+    @{ Host = "app-backend.wascript.com.br";     Match = "^/api/services/initial";   Dest = "$BasePath/api/services/initial-data.php" },
+    @{ Host = "app-backend.wascript.com.br";     Match = "^/api/notify/get";         Dest = "$BasePath/api/notify/get.php"         },
+
+    # audio-transcriber.wascript.com.br
+    @{ Host = "audio-transcriber.wascript.com.br"; Match = "^/transcription";        Dest = "$BasePath/transcription.php"          }
+)
+
+function Resolve-Route {
+    param([string]$host, [string]$rawUrl)
+    foreach ($route in $RouteTable) {
+        if ($host -eq $route.Host -and $rawUrl -match $route.Match) {
+            return $route.Dest
+        }
+    }
+    # fallback: repassa o caminho original
+    return $BasePath + $rawUrl
+}
 
 # ── Visuais ────────────────────────────────────────────────────────
 
@@ -97,20 +127,20 @@ function Show-FatalError([string]$msg) {
 function Start-Activate {
     Show-Banner
     Write-Host "  " -NoNewline
-    Write-Host "[ WASPEED ENGINE  >>  PATCH v5.0 ]" -ForegroundColor Green
+    Write-Host "[ WASPEED ENGINE  >>  PATCH v5.1 ]" -ForegroundColor Green
     Write-Host ""
 
     @(
         "Interceptando dominios wascript.com.br...",
         "Configurando redirecionamento local (127.0.0.1)...",
-        "Gerando certificados SSL auto-assinados...",
-        "Instalando certificados na Autoridade Raiz Confiável...",
-        "Mapeando portas HTTPS (443)...",
+        "Gerando certificados SSL auto-assinados (SAN)...",
+        "Instalando certificados na Autoridade Raiz Confiavel...",
+        "Mapeando porta HTTPS (443)...",
         "Conectando ao servidor remoto zapmod.shop...",
-        "Sincronizando rotas da API PHP...",
-        "Validando bypass de autenticacao...",
-        "Injetando headers de bypass [access-token]...",
-        "Finalizando configuracao do Proxy reverso..."
+        "Carregando tabela de rotas da API...",
+        "Validando mapeamento de endpoints...",
+        "Iniciando Proxy Reverso local...",
+        "Finalizando configuracao..."
     ) | ForEach-Object { Show-HackLine $_ "Green" }
 
     Write-Host ""
@@ -120,27 +150,22 @@ function Start-Activate {
     $AppGuid   = "{$(New-Guid)}"
 
     try {
-        # 1. Atualizar arquivo HOSTS
+        # 1. Atualizar HOSTS
         $c = Get-Content $HostsPath
-        foreach ($hostName in $OldHosts) {
-            $c = $c | Where-Object { $_ -notmatch $hostName }
-            $c += "127.0.0.1 $hostName # WaSpeed Redirect"
+        foreach ($h in $OldHosts) {
+            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($h) }
+            $c += "127.0.0.1 $h # WaSpeed Redirect"
         }
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
 
-        # 2. Configurar Certificados SSL para todos os dominios
+        # 2. Certificado SSL SAN para todos os dominios
         netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
-        
-        # Cria um certificado SAN (Subject Alternative Name) para todos os dominios
-        $dnsNames = $OldHosts -join ","
         $cert = New-SelfSignedCertificate -DnsName $OldHosts -CertStoreLocation Cert:\LocalMachine\My -NotAfter (Get-Date).AddYears(10)
-        
         $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root","LocalMachine")
         $store.Open("ReadWrite")
         $store.Add($cert)
         $store.Close()
-
         netsh http add sslcert ipport=0.0.0.0:443 certhash=$($cert.Thumbprint) appid=$AppGuid | Out-Null
 
     } catch {
@@ -148,57 +173,65 @@ function Start-Activate {
     }
 
     Show-SuccessBox "WASPEED ATIVADO COM SUCESSO!"
-    Write-Host "  " -NoNewline; Write-Host "Proxy Reverso Ativo e Operacional." -ForegroundColor DarkGreen
-    Write-Host "  " -NoNewline; Write-Host "Redirecionando para: $NewHost$BasePath" -ForegroundColor DarkGreen
+    Write-Host "  " -NoNewline; Write-Host "Proxy Reverso Ativo — Rotas mapeadas:" -ForegroundColor DarkGreen
+    Write-Host ""
+    foreach ($route in $RouteTable) {
+        Write-Host "  " -NoNewline
+        Write-Host "$($route.Host)$($route.Match)" -ForegroundColor DarkCyan -NoNewline
+        Write-Host "  →  " -ForegroundColor DarkGray -NoNewline
+        Write-Host "$NewHost$($route.Dest)" -ForegroundColor White
+    }
     Write-Host ""
     Write-Host "  " -NoNewline; Write-Host " MANTENHA ESTA JANELA ABERTA " -ForegroundColor White -BackgroundColor DarkBlue
     Write-Host "  " -NoNewline; Write-Host "Pressione CTRL+C para encerrar." -ForegroundColor DarkGray
     Write-Host ""
 
-    # 3. Iniciar Servidor Proxy
+    # 3. Proxy Reverso
     $listener = New-Object System.Net.HttpListener
-    foreach ($hostName in $OldHosts) {
-        $listener.Prefixes.Add("https://$hostName/")
+    foreach ($h in $OldHosts) {
+        $listener.Prefixes.Add("https://$h/")
     }
 
     try {
         $listener.Start()
         while ($listener.IsListening) {
-            $context   = $listener.GetContext()
-            $req       = $context.Request
-            $res       = $context.Response
-            
-            # Monta a URL de destino baseada no Host de origem
-            $targetUrl = "https://$NewHost$BasePath" + $req.RawUrl
-            
-            # Log simples no console
-            Write-Host "  [PROXY] " -NoNewline; Write-Host "$($req.HttpMethod) " -ForegroundColor Cyan -NoNewline; Write-Host "$($req.Url.Host)$($req.RawUrl) -> REDIRECT" -ForegroundColor Gray
+            $context = $listener.GetContext()
+            $req     = $context.Request
+            $res     = $context.Response
+
+            $reqHost   = $req.Url.Host
+            $rawUrl    = $req.RawUrl
+            $destPath  = Resolve-Route -host $reqHost -rawUrl $rawUrl
+            $targetUrl = "https://$NewHost$destPath"
+
+            Write-Host "  " -NoNewline
+            Write-Host "$($req.HttpMethod)" -ForegroundColor Cyan -NoNewline
+            Write-Host "  $reqHost$rawUrl" -ForegroundColor DarkGray -NoNewline
+            Write-Host "  →  " -ForegroundColor Yellow -NoNewline
+            Write-Host "$targetUrl" -ForegroundColor White
 
             try {
                 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
-                $webReq        = [System.Net.HttpWebRequest]::Create($targetUrl)
-                $webReq.Method = $req.HttpMethod
-                $webReq.UserAgent = $req.UserAgent
+                $webReq             = [System.Net.HttpWebRequest]::Create($targetUrl)
+                $webReq.Method      = $req.HttpMethod
+                $webReq.UserAgent   = $req.UserAgent
                 $webReq.ContentType = $req.ContentType
 
-                # Copia Headers
                 foreach ($h in $req.Headers.AllKeys) {
                     if ($h -notin @("Host","Connection","Content-Length","Accept-Encoding","User-Agent","Content-Type")) {
                         try { $webReq.Headers.Add($h, $req.Headers[$h]) } catch {}
                     }
                 }
 
-                # Copia Body (POST/PUT)
                 if ($req.HasEntityBody) {
                     $s = $webReq.GetRequestStream()
                     $req.InputStream.CopyTo($s)
                     $s.Close()
                 }
 
-                # Obtem Resposta
-                $webRes         = $webReq.GetResponse()
-                $res.StatusCode = [int]$webRes.StatusCode
-                $res.ContentType = $webRes.ContentType
+                $webRes              = $webReq.GetResponse()
+                $res.StatusCode      = [int]$webRes.StatusCode
+                $res.ContentType     = $webRes.ContentType
 
                 foreach ($h in $webRes.Headers.AllKeys) {
                     if ($h -notin @("Transfer-Encoding","Content-Length","Content-Type")) {
@@ -206,7 +239,6 @@ function Start-Activate {
                     }
                 }
 
-                # Copia Stream de Resposta
                 $webRes.GetResponseStream().CopyTo($res.OutputStream)
                 $webRes.Close()
 
@@ -225,9 +257,10 @@ function Start-Activate {
             $res.Close()
         }
     } catch {
-        Show-FatalError "Erro no servidor Proxy: $($_.Exception.Message)"
+        Show-FatalError "Erro no Proxy: $($_.Exception.Message)"
     } finally {
         $listener.Stop()
+        netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
     }
 }
 
@@ -236,7 +269,7 @@ function Start-Activate {
 function Start-Deactivate {
     Show-Banner
     Write-Host "  " -NoNewline
-    Write-Host "[ WASPEED ENGINE  >>  RESTORE v5.0 ]" -ForegroundColor Yellow
+    Write-Host "[ WASPEED ENGINE  >>  RESTORE v5.1 ]" -ForegroundColor Yellow
     Write-Host ""
 
     @(
@@ -244,8 +277,8 @@ function Start-Deactivate {
         "Removendo entradas de redirecionamento...",
         "Desinstalando certificados SSL do sistema...",
         "Limpando cache DNS (flushdns)...",
-        "Removendo mapeamento de portas HTTPS...",
-        "Restaurando rotas originais do Windows...",
+        "Removendo mapeamento de porta HTTPS (443)...",
+        "Restaurando rotas originais...",
         "Verificando integridade do sistema..."
     ) | ForEach-Object { Show-HackLine $_ "Yellow" }
 
@@ -256,16 +289,19 @@ function Start-Deactivate {
 
     try {
         $c = Get-Content $HostsPath
-        foreach ($hostName in $OldHosts) {
-            $c = $c | Where-Object { $_ -notmatch $hostName }
+        foreach ($h in $OldHosts) {
+            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($h) }
         }
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
-        
+
         netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
 
-        $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*wascript.com.br*" }
-        if ($cert) { Remove-Item $cert.PSPath -Force }
+        $certs = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*wascript.com.br*" }
+        foreach ($cert in $certs) { Remove-Item $cert.PSPath -Force }
+
+        $rootCerts = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -like "*wascript.com.br*" }
+        foreach ($cert in $rootCerts) { Remove-Item $cert.PSPath -Force }
 
         Show-SuccessBox "WASPEED DESATIVADO COM SUCESSO!"
         Write-Host "  " -NoNewline; Write-Host "Sistema restaurado ao estado original." -ForegroundColor DarkYellow
@@ -287,7 +323,7 @@ function Show-Menu {
     Show-Banner
     Write-Host "  " -NoNewline; Write-Host "Selecione uma opcao:" -ForegroundColor White
     Write-Host ""
-    Write-Host "  " -NoNewline; Write-Host "[ 1 ]" -ForegroundColor Green  -NoNewline; Write-Host "  ATIVAR WASPEED (REDIRECIONAR)" -ForegroundColor White
+    Write-Host "  " -NoNewline; Write-Host "[ 1 ]" -ForegroundColor Green  -NoNewline; Write-Host "  ATIVAR WASPEED" -ForegroundColor White
     Write-Host "        " -NoNewline; Write-Host "Redireciona wascript.com.br -> zapmod.shop" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  " -NoNewline; Write-Host "[ 2 ]" -ForegroundColor Yellow -NoNewline; Write-Host "  DESFAZER" -ForegroundColor White
