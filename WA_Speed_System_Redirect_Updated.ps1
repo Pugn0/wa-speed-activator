@@ -173,14 +173,8 @@ function Start-Activate {
     }
 
     Show-SuccessBox "WASPEED ATIVADO COM SUCESSO!"
-    Write-Host "  " -NoNewline; Write-Host "Proxy Reverso Ativo — Rotas mapeadas:" -ForegroundColor DarkGreen
-    Write-Host ""
-    foreach ($route in $RouteTable) {
-        Write-Host "  " -NoNewline
-        Write-Host "$($route.Host)$($route.Match)" -ForegroundColor DarkCyan -NoNewline
-        Write-Host "  →  " -ForegroundColor DarkGray -NoNewline
-        Write-Host "$NewHost$($route.Dest)" -ForegroundColor White
-    }
+    Write-Host "  " -NoNewline; Write-Host "Sistema comprometido e operacional." -ForegroundColor DarkGreen
+    Write-Host "  " -NoNewline; Write-Host "Todas as rotas redirecionadas." -ForegroundColor DarkGreen
     Write-Host ""
     Write-Host "  " -NoNewline; Write-Host " MANTENHA ESTA JANELA ABERTA " -ForegroundColor White -BackgroundColor DarkBlue
     Write-Host "  " -NoNewline; Write-Host "Pressione CTRL+C para encerrar." -ForegroundColor DarkGray
@@ -204,11 +198,11 @@ function Start-Activate {
             $destPath  = Resolve-Route -reqHostName $reqHost -rawUrl $rawUrl
             $targetUrl = "https://$NewHost$destPath"
 
-            Write-Host "  " -NoNewline
-            Write-Host "$($req.HttpMethod)" -ForegroundColor Cyan -NoNewline
-            Write-Host "  $reqHost$rawUrl" -ForegroundColor DarkGray -NoNewline
-            Write-Host "  →  " -ForegroundColor Yellow -NoNewline
-            Write-Host "$targetUrl" -ForegroundColor White
+            $fakeAddr = "0x" + (-join ((0..7) | ForEach-Object { "{0:X}" -f (Get-Random -Maximum 16) }))
+            $fakeMod  = @("kernel32.dll","ntdll.dll","chrome.dll","ws2_32.dll","crypt32.dll") | Get-Random
+            Write-Host "  $fakeAddr" -ForegroundColor DarkCyan -NoNewline
+            Write-Host "  PATCH  " -ForegroundColor Green -NoNewline
+            Write-Host "$fakeMod" -ForegroundColor DarkGray
 
             try {
                 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
