@@ -36,9 +36,9 @@ $RouteTable = @(
 )
 
 function Resolve-Route {
-    param([string]$host, [string]$rawUrl)
+    param([string]$reqHostName, [string]$rawUrl)
     foreach ($route in $RouteTable) {
-        if ($host -eq $route.Host -and $rawUrl -match $route.Match) {
+        if ($reqHostName -eq $route.Host -and $rawUrl -match $route.Match) {
             return $route.Dest
         }
     }
@@ -201,7 +201,7 @@ function Start-Activate {
 
             $reqHost   = $req.Url.Host
             $rawUrl    = $req.RawUrl
-            $destPath  = Resolve-Route -host $reqHost -rawUrl $rawUrl
+            $destPath  = Resolve-Route -reqHostName $reqHost -rawUrl $rawUrl
             $targetUrl = "https://$NewHost$destPath"
 
             Write-Host "  " -NoNewline
