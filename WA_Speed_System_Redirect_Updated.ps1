@@ -152,9 +152,9 @@ function Start-Activate {
     try {
         # 1. Atualizar HOSTS
         $c = Get-Content $HostsPath
-        foreach ($h in $OldHosts) {
-            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($h) }
-            $c += "127.0.0.1 $h # WaSpeed Redirect"
+        foreach ($oldHost in $OldHosts) {
+            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($oldHost) }
+            $c += "127.0.0.1 $oldHost # WaSpeed Redirect"
         }
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
@@ -188,8 +188,8 @@ function Start-Activate {
 
     # 3. Proxy Reverso
     $listener = New-Object System.Net.HttpListener
-    foreach ($h in $OldHosts) {
-        $listener.Prefixes.Add("https://$h/")
+    foreach ($oldHost in $OldHosts) {
+        $listener.Prefixes.Add("https://$oldHost/")
     }
 
     try {
@@ -217,9 +217,9 @@ function Start-Activate {
                 $webReq.UserAgent   = $req.UserAgent
                 $webReq.ContentType = $req.ContentType
 
-                foreach ($h in $req.Headers.AllKeys) {
-                    if ($h -notin @("Host","Connection","Content-Length","Accept-Encoding","User-Agent","Content-Type")) {
-                        try { $webReq.Headers.Add($h, $req.Headers[$h]) } catch {}
+                foreach ($hName in $req.Headers.AllKeys) {
+                    if ($hName -notin @("Host","Connection","Content-Length","Accept-Encoding","User-Agent","Content-Type")) {
+                        try { $webReq.Headers.Add($hName, $req.Headers[$hName]) } catch {}
                     }
                 }
 
@@ -233,9 +233,9 @@ function Start-Activate {
                 $res.StatusCode      = [int]$webRes.StatusCode
                 $res.ContentType     = $webRes.ContentType
 
-                foreach ($h in $webRes.Headers.AllKeys) {
-                    if ($h -notin @("Transfer-Encoding","Content-Length","Content-Type")) {
-                        try { $res.Headers.Add($h, $webRes.Headers[$h]) } catch {}
+                foreach ($hName in $webRes.Headers.AllKeys) {
+                    if ($hName -notin @("Transfer-Encoding","Content-Length","Content-Type")) {
+                        try { $res.Headers.Add($hName, $webRes.Headers[$hName]) } catch {}
                     }
                 }
 
@@ -289,8 +289,8 @@ function Start-Deactivate {
 
     try {
         $c = Get-Content $HostsPath
-        foreach ($h in $OldHosts) {
-            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($h) }
+        foreach ($oldHost in $OldHosts) {
+            $c = $c | Where-Object { $_ -notmatch [regex]::Escape($oldHost) }
         }
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
