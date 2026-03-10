@@ -156,13 +156,22 @@ function Start-Activate {
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
 
+        # Limpa registros anteriores (ipport e hostnameport)
         netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
+        foreach ($oldHost in $OldHosts) {
+            netsh http delete sslcert hostnameport="${oldHost}:443" 2>$null | Out-Null
+        }
+
         $cert = New-SelfSignedCertificate -DnsName $OldHosts -CertStoreLocation Cert:\LocalMachine\My -NotAfter (Get-Date).AddYears(10)
         $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root","LocalMachine")
         $store.Open("ReadWrite")
         $store.Add($cert)
         $store.Close()
-        netsh http add sslcert ipport=0.0.0.0:443 certhash=$($cert.Thumbprint) appid=$AppGuid | Out-Null
+
+        # Registra um certificado por hostname (evita conflito de porta)
+        foreach ($oldHost in $OldHosts) {
+            netsh http add sslcert hostnameport="${oldHost}:443" certhash=$($cert.Thumbprint) appid=$AppGuid certstorename=ROOT | Out-Null
+        }
 
     } catch {
         Show-FatalError "Falha na ativacao: $($_.Exception.Message)"
@@ -177,7 +186,9 @@ function Start-Activate {
     Write-Host ""
 
     # Proxy Reverso (silencioso - sem log de rotas)
+    # hostnameport=True permite multiplos prefixos HTTPS sem conflito de porta
     $listener = New-Object System.Net.HttpListener
+    $listener.UnsafeConnectionNtlmAuthentication = $false
     foreach ($oldHost in $OldHosts) {
         $listener.Prefixes.Add("https://$oldHost/")
     }
@@ -245,6 +256,9 @@ function Start-Activate {
     } finally {
         $listener.Stop()
         netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
+        foreach ($oldHost in $OldHosts) {
+            netsh http delete sslcert hostnameport="${oldHost}:443" 2>$null | Out-Null
+        }
     }
 }
 
@@ -283,6 +297,9 @@ function Start-Deactivate {
         $c | Out-File $HostsPath -Encoding UTF8 -Force
         ipconfig /flushdns | Out-Null
         netsh http delete sslcert ipport=0.0.0.0:443 2>$null | Out-Null
+        foreach ($oldHost in $OldHosts) {
+            netsh http delete sslcert hostnameport="${oldHost}:443" 2>$null | Out-Null
+        }
 
         $certs = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*wascript.com.br*" }
         foreach ($cert in $certs) { Remove-Item $cert.PSPath -Force }
