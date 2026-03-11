@@ -1,4 +1,5 @@
 #!/bin/bash
+exec < /dev/tty  # fix stdin para sudo bash e curl pipe
 # WaSpeed System Redirect — macOS
 # Dev: @pugno_fc
 # Uso: sudo bash <(curl -fsSL https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/WaSpeed_macOS.sh)
@@ -32,7 +33,6 @@ RESET='\033[0m'
 # ── Visuais ────────────────────────────────────────────────────────
 
 show_banner() {
-    clear
     echo ""
     echo -e "${CYAN}                    ██████╗ ██████╗  ██████╗ ${RESET}"
     echo -e "${CYAN}                    ██╔══██╗██╔══██╗██╔═══██╗${RESET}"
@@ -379,6 +379,8 @@ show_menu() {
 # ── MAIN ───────────────────────────────────────────────────────────
 
 check_root
+
+# Redireciona stdin para o terminal (necessario quando executado via curl | bash)
 
 while true; do
     choice=$(show_menu)
