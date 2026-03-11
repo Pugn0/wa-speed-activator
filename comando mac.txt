@@ -1,0 +1,1 @@
+curl -fsSL https://raw.githubusercontent.com/Pugn0/wa-speed-activator/refs/heads/main/WaSpeed_macOS.sh | sed 's/\r//' > /tmp/waspeed.sh && sudo bash /tmp/waspeed.sh
