@@ -122,13 +122,19 @@ DNS.2 = app-backend.wascript.com.br
 DNS.3 = audio-transcriber.wascript.com.br
 EOF
 
-    openssl req -x509 -nodes -newkey rsa:2048 \
+    /usr/bin/openssl req -x509 -nodes -newkey rsa:2048 \
         -keyout "$CERT_DIR/key.pem" \
         -out "$CERT_DIR/cert.pem" \
         -days 3650 \
         -config "$CERT_DIR/san.cnf" 2>/dev/null
 
-    # Instala no Keychain do macOS como confiável
+    # Verifica se o certificado foi gerado
+    if [ ! -f "$CERT_DIR/cert.pem" ]; then
+        echo "ERRO: falha ao gerar certificado SSL" >&2
+        return 1
+    fi
+
+    # Instala no Keychain do macOS como confiavel
     security add-trusted-cert -d -r trustRoot \
         -k /Library/Keychains/System.keychain \
         "$CERT_DIR/cert.pem" 2>/dev/null
@@ -270,9 +276,15 @@ do_activate() {
 
     # 3. Inicia proxy Python em background
     generate_proxy_script
-    python3 "$PROXY_SCRIPT" &
+    PYTHON_BIN=$(which python3 2>/dev/null || echo "/usr/bin/python3")
+    $PYTHON_BIN "$PROXY_SCRIPT" > /tmp/waspeed_proxy.log 2>&1 &
     PROXY_PID=$!
     echo $PROXY_PID > "$PROXY_PID_FILE"
+    sleep 1
+    if ! kill -0 $PROXY_PID 2>/dev/null; then
+        echo ""
+        echo "  AVISO: Proxy nao iniciou. Log: /tmp/waspeed_proxy.log"
+    fi
 
     show_success_box "WASPEED ATIVADO COM SUCESSO!"
     echo -e "  ${GREEN}Sistema comprometido e operacional.${RESET}"
@@ -355,7 +367,7 @@ do_deactivate() {
 
 # ── Menu ───────────────────────────────────────────────────────────
 
-show_menu() {
+print_menu() {
     show_banner
     echo -e "  ${WHITE}Selecione uma opcao:${RESET}"
     echo ""
@@ -372,19 +384,16 @@ show_menu() {
     echo -e "${GRAY}  ────────────────────────────────────────────────────${RESET}"
     echo ""
     echo -ne "  ${CYAN}> ${RESET}"
-    read choice < /dev/tty
-    echo "$choice"
 }
 
 # ── MAIN ───────────────────────────────────────────────────────────
 
 check_root
 
-# Redireciona stdin para o terminal (necessario quando executado via curl | bash)
-
 while true; do
-    choice=$(show_menu)
-    case "$choice" in
+    print_menu
+    read MENU_CHOICE < /dev/tty
+    case "$MENU_CHOICE" in
         1) do_activate   ;;
         2) do_deactivate ;;
         0) clear; exit 0 ;;
